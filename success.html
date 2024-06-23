@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spotify Playlist Generator</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+    </div>
+    <div class="container">
+        <h1>Spotify Playlist Generator</h1>
+        <form id="playlistForm">
+            <input type="text" id="artistInput" placeholder="Enter artist">
+            <div id="suggestions" class="suggestions"></div>
+            <button type="button" id="addArtistButton">Add</button>
+            <input type="number" id="playlistLength" placeholder="Playlist length">
+            <button type="submit">Generate</button>
+        </form>
+        <ul id="artistList"></ul>
+        <div id="playlistResult"></div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const artistInput = document.getElementById('artistInput');
+            const suggestions = document.getElementById('suggestions');
+            const addArtistButton = document.getElementById('addArtistButton');
+            const artistList = document.getElementById('artistList');
+            const playlistForm = document.getElementById('playlistForm');
+            const playlistLengthInput = document.getElementById('playlistLength');
+            const playlistResult = document.getElementById('playlistResult');
+            const loadingOverlay = document.getElementById('loadingOverlay');
+
+            let artists = [];
+            let accessToken = '';
+
+            const getAccessToken = async () => {
+                try {
+                    const response = await fetch('/api/token');
+                    if (response.ok) {
+                        const data = await response.json();
+                        accessToken = data.access_token;
+                    } else {
+                        throw new Error('Failed to fetch access token');
+                    }
+                } catch (error) {
+                    console.error('Error fetching access token:', error.message);
+                    alert('Error fetching access token. Please try again.');
+                }
+            };
+
+            const searchArtists = async (query) => {
+                try {
+                    const searchResponse = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=artist&limit=5`, {
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`
+                        }
+                    });
+
+                    if (searchResponse.ok) {
+                        const searchData = await searchResponse.json();
+                        return searchData.artists.items;
+                    } else {
+                        console.error('Failed to search artists');
+                        return [];
+                    }
+                } catch (error) {
+                    console.error('Error fetching artist suggestions:', error.message);
+                    return [];
+                }
+            };
+
+            artistInput.addEventListener('input', async () => {
+                const query = artistInput.value.trim();
+                if (query) {
+                    const artistSuggestions = await searchArtists(query);
+                    suggestions.innerHTML = '';
+                    artistSuggestions.forEach(artist => {
+                        const suggestionItem = document.createElement('div');
+                        suggestionItem.classList.add('suggestion-item');
+                        suggestionItem.innerHTML = `
+                            <img src="${artist.images[0]?.url || 'default-profile.png'}" alt="${artist.name}">
+                            <span>${artist.name}</span>
+                        `;
+                        suggestionItem.addEventListener('click', () => {
+                            artistInput.value = artist.name;
+                            artistInput.setAttribute('data-artist-id', artist.id);
+                            suggestions.innerHTML = '';
+                        });
+                        suggestions.appendChild(suggestionItem);
+                    });
+                } else {
+                    suggestions.innerHTML = '';
+                }
+            });
+
+            addArtistButton.addEventListener('click', () => {
+                const artistName = artistInput.value.trim();
+                const artistId = artistInput.getAttribute('data-artist-id');
+
+                if (!artistId) {
+                    alert('Please select an artist from the suggestions.');
+                    return;
+                }
+
+                if (artists.some(a => a.id === artistId)) {
+                    alert('Artist already added.');
+                    return;
+                }
+
+                if (artists.length >= 5) {
+                    alert('You can add up to 5 artists only.');
+                    return;
+                }
+
+                artists.push({ name: artistName, id: artistId });
+                const listItem = document.createElement('li');
+                listItem.classList.add('artist-item');
+                listItem.innerHTML = `
+                    <span>${artistName}</span>
+                    <button type="button" data-artist-id="${artistId}">x</button>
+                `;
+                artistList.appendChild(listItem);
+                artistInput.value = '';
+                artistInput.removeAttribute('data-artist-id');
+            });
+
+            artistList.addEventListener('click', (e) => {
+                if (e.target.tagName === 'BUTTON') {
+                    const artistId = e.target.getAttribute('data-artist-id');
+                    artists = artists.filter(a => a.id !== artistId);
+                    e.target.parentElement.remove();
+                }
+            });
+
+            playlistForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                if (artists.length === 0) {
+                    alert('Please add at least one artist.');
+                    return;
+                }
+
+                const playlistLength = parseInt(playlistLengthInput.value, 10);
+                if (isNaN(playlistLength) || playlistLength <= 0) {
+                    alert('Please enter a valid playlist length.');
+                    return;
+                }
+
+                loadingOverlay.style.display = 'flex';
+
+                try {
+                    const userResponse = await fetch('https://api.spotify.com/v1/me', {
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`
+                        }
+                    });
+
+                    if (!userResponse.ok) {
+                        const errorResponse = await userResponse.text();
+                        console.error('Failed to get user info:', errorResponse);
+                        throw new Error('Failed to get user info');
+                    }
+
+                    const userData = await userResponse.json();
+                    const userId = userData.id;
+
+                    const artistNames = artists.map(artist => artist.name).join(', ');
+                    const playlistDescription = `Playlist generated based on ${artistNames}`;
+
+                    const response = await fetch(`https://api.spotify.com/v1/users/${userId}/playlists`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            name: 'Generated Playlist',
+                            description: playlistDescription,
+                            public: false
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorResponse = await response.text();
+                        console.error('Failed to create playlist:', errorResponse);
+                        throw new Error('Failed to create playlist');
+                    }
+
+                    const playlistData = await response.json();
+                    const playlistId = playlistData.id;
+
+                    const trackUris = new Set();
+
+                    const fetchArtistTracks = async (artistId) => {
+                        const artistTopTracksResponse = await fetch(`https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=US`, {
+                            headers: {
+                                'Authorization': `Bearer ${accessToken}`
+                            }
+                        });
+
+                        if (artistTopTracksResponse.ok) {
+                            const artistTopTracksData = await artistTopTracksResponse.json();
+                            artistTopTracksData.tracks.forEach(track => {
+                                trackUris.add(track.uri);
+                            });
+                        }
+
+                        const relatedArtistsResponse = await fetch(`https://api.spotify.com/v1/artists/${artistId}/related-artists`, {
+                            headers: {
+                                'Authorization': `Bearer ${accessToken}`
+                            }
+                        });
+
+                        if (relatedArtistsResponse.ok) {
+                            const relatedArtistsData = await relatedArtistsResponse.json();
+                            const relatedArtistPromises = relatedArtistsData.artists.map(async (relatedArtist) => {
+                                const relatedArtistTopTracksResponse = await fetch(`https://api.spotify.com/v1/artists/${relatedArtist.id}/top-tracks?market=US`, {
+                                    headers: {
+                                        'Authorization': `Bearer ${accessToken}`
+                                    }
+                                });
+
+                                if (relatedArtistTopTracksResponse.ok) {
+                                    const relatedArtistTopTracksData = await relatedArtistTopTracksResponse.json();
+                                    relatedArtistTopTracksData.tracks.forEach(track => {
+                                        trackUris.add(track.uri);
+                                    });
+                                }
+                            });
+
+                            await Promise.all(relatedArtistPromises);
+                        }
+                    };
+
+                    const artistPromises = artists.map(artist => fetchArtistTracks(artist.id));
+                    await Promise.all(artistPromises);
+
+                    const limitedTrackUris = Array.from(trackUris).slice(0, playlistLength);
+                    for (let i = limitedTrackUris.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [limitedTrackUris[i], limitedTrackUris[j]] = [limitedTrackUris[j], limitedTrackUris[i]];
+                    }
+
+                    const addTracksResponse = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            uris: limitedTrackUris
+                        })
+                    });
+
+                    if (!addTracksResponse.ok) {
+                        const errorResponse = await addTracksResponse.text();
+                        console.error('Failed to add tracks to playlist:', errorResponse);
+                        throw new Error('Failed to add tracks to playlist');
+                    }
+
+                    playlistResult.innerHTML = `<p>Playlist created successfully! <a href="https://open.spotify.com/playlist/${playlistId}" target="_blank">View Playlist</a></p>`;
+                    loadingOverlay.style.display = 'none';
+                } catch (error) {
+                    console.error('Error creating playlist:', error.message);
+                    alert('There was an error creating the playlist. Please try again.');
+                    loadingOverlay.style.display = 'none';
+                }
+            });
+
+            getAccessToken();
+        });
+    </script>
+</body>
+</html>
