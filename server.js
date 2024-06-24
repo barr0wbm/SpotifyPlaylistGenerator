@@ -8,32 +8,37 @@ require('dotenv').config();
 const app = express();
 const port = 8000;
 
-const clientId = process.env.CLIENT_ID;  // Replace with your client ID
-const clientSecret = process.env.CLIENT_SECRET;  // Replace with your client secret
+// Retrieve environment variables
+const clientId = process.env.CLIENT_ID;  // Spotify client ID
+const clientSecret = process.env.CLIENT_SECRET;  // Spotify client secret
 const redirectUri = 'http://localhost:8000/callback';  // Ensure this matches the registered redirect URI
 
+// Middleware setup
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname)));
 
-// Set up session middleware with secret key from environment variable
+// Session middleware configuration
 app.use(session({
-    secret: process.env.SESSION_SECRET,  // Use the environment variable for the secret key
+    secret: process.env.SESSION_SECRET,  // Secret key for session
     resave: false,
     saveUninitialized: true,
     cookie: { secure: false }  // Set to true if using HTTPS
 }));
 
+// Route for the home page
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// Route for initiating Spotify login
 app.get('/login', (req, res) => {
     const scope = 'playlist-modify-private playlist-modify-public user-read-private user-read-email';
     const authUrl = `https://accounts.spotify.com/authorize?response_type=code&client_id=${clientId}&scope=${encodeURIComponent(scope)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
     res.redirect(authUrl);
 });
 
+// Callback route for handling Spotify authentication response
 app.get('/callback', async (req, res) => {
     const code = req.query.code;
 
@@ -61,6 +66,7 @@ app.get('/callback', async (req, res) => {
     }
 });
 
+// Success route to display after successful login
 app.get('/success', (req, res) => {
     if (!req.session.accessToken) {
         return res.redirect('/login');
@@ -76,6 +82,7 @@ app.get('/api/token', (req, res) => {
     res.json({ access_token: req.session.accessToken });
 });
 
+// Start the server
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
 });
