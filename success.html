@@ -7,11 +7,16 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <!-- Loading overlay shown during data fetching -->
     <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-spinner"></div>
     </div>
+
+    <!-- Main container for the app -->
     <div class="container">
         <h1>Spotify Playlist Generator</h1>
+
+        <!-- Form for inputting artists and playlist length -->
         <form id="playlistForm">
             <input type="text" id="artistInput" placeholder="Enter artist">
             <div id="suggestions" class="suggestions"></div>
@@ -19,9 +24,14 @@
             <input type="number" id="playlistLength" placeholder="Playlist length">
             <button type="submit">Generate</button>
         </form>
+
+        <!-- List of added artists -->
         <ul id="artistList"></ul>
+
+        <!-- Result container for the created playlist link -->
         <div id="playlistResult"></div>
     </div>
+
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const artistInput = document.getElementById('artistInput');
@@ -36,6 +46,7 @@
             let artists = [];
             let accessToken = '';
 
+            // Function to get access token from the server
             const getAccessToken = async () => {
                 try {
                     const response = await fetch('/api/token');
@@ -51,6 +62,7 @@
                 }
             };
 
+            // Function to search artists on Spotify
             const searchArtists = async (query) => {
                 try {
                     const searchResponse = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=artist&limit=5`, {
@@ -72,6 +84,7 @@
                 }
             };
 
+            // Event listener for artist input field
             artistInput.addEventListener('input', async () => {
                 const query = artistInput.value.trim();
                 if (query) {
@@ -96,6 +109,7 @@
                 }
             });
 
+            // Event listener for adding artist to the list
             addArtistButton.addEventListener('click', () => {
                 const artistName = artistInput.value.trim();
                 const artistId = artistInput.getAttribute('data-artist-id');
@@ -127,6 +141,7 @@
                 artistInput.removeAttribute('data-artist-id');
             });
 
+            // Event listener for removing artist from the list
             artistList.addEventListener('click', (e) => {
                 if (e.target.tagName === 'BUTTON') {
                     const artistId = e.target.getAttribute('data-artist-id');
@@ -135,6 +150,7 @@
                 }
             });
 
+            // Event listener for form submission to generate playlist
             playlistForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
 
@@ -194,6 +210,7 @@
 
                     const trackUris = new Set();
 
+                    // Function to fetch top tracks and related artists' tracks
                     const fetchArtistTracks = async (artistId) => {
                         const artistTopTracksResponse = await fetch(`https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=US`, {
                             headers: {
@@ -235,15 +252,18 @@
                         }
                     };
 
+                    // Fetch tracks for each artist
                     const artistPromises = artists.map(artist => fetchArtistTracks(artist.id));
                     await Promise.all(artistPromises);
 
+                    // Limit the number of tracks to the specified playlist length and shuffle the tracks
                     const limitedTrackUris = Array.from(trackUris).slice(0, playlistLength);
                     for (let i = limitedTrackUris.length - 1; i > 0; i--) {
                         const j = Math.floor(Math.random() * (i + 1));
                         [limitedTrackUris[i], limitedTrackUris[j]] = [limitedTrackUris[j], limitedTrackUris[i]];
                     }
 
+                    // Add tracks to the created playlist
                     const addTracksResponse = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
                         method: 'POST',
                         headers: {
@@ -270,6 +290,7 @@
                 }
             });
 
+            // Fetch the access token when the page loads
             getAccessToken();
         });
     </script>
